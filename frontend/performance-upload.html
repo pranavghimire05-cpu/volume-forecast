@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Performance Upload · Bandwidth AI</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-mount"></div>
+
+  <main class="main">
+    <div class="page-header">
+      <div>
+        <div class="page-title"><span class="emoji">➕</span>Performance Upload</div>
+        <div class="page-sub">Upload CW / analyst / reviewer performance reports for the Performance Agent to analyze.</div>
+      </div>
+    </div>
+
+    <div id="banner-slot"></div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="section-title">Upload performance file</div>
+
+        <div class="dropzone" id="dropzone">
+          <div class="dz-icon">📊</div>
+          <div class="dz-title">Drag & drop your file here</div>
+          <div class="dz-sub">or click to browse · CSV or Excel</div>
+          <input type="file" id="file-input" accept=".csv,.xlsx,.xls" hidden />
+        </div>
+
+        <div id="file-chip-slot"></div>
+
+        <div style="margin-top:20px; display:flex; gap:10px;">
+          <button class="btn" id="upload-btn" disabled>
+            <span id="upload-btn-label">⬆️ Upload Performance Data</span>
+          </button>
+          <button class="btn btn-outline" id="clear-btn" style="display:none;">Clear</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">What this powers</div>
+        <div class="kv-row"><span class="k">Used by</span><span class="v accent">Performance Agent</span></div>
+        <div class="kv-row"><span class="k">Tracks</span><span class="v">CAP, TAT, facets, workblocks</span></div>
+        <div class="kv-row"><span class="k">Output</span><span class="v">Per-employee performance analysis</span></div>
+      </div>
+    </div>
+
+    <div class="card" id="result-card" style="margin-top:22px; display:none;">
+      <div class="section-title">Upload result</div>
+      <div class="raw-json" id="result-json"></div>
+    </div>
+  </main>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+  mountSidebar("performance-upload");
+
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("file-input");
+  const fileChipSlot = document.getElementById("file-chip-slot");
+  const uploadBtn = document.getElementById("upload-btn");
+  const uploadBtnLabel = document.getElementById("upload-btn-label");
+  const clearBtn = document.getElementById("clear-btn");
+  const bannerSlot = document.getElementById("banner-slot");
+  const resultCard = document.getElementById("result-card");
+  const resultJson = document.getElementById("result-json");
+
+  let selectedFile = null;
+
+  dropzone.addEventListener("click", () => fileInput.click());
+  ["dragenter", "dragover"].forEach((evt) =>
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropzone.classList.add("drag");
+    })
+  );
+  ["dragleave", "drop"].forEach((evt) =>
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("drag");
+    })
+  );
+  dropzone.addEventListener("drop", (e) => {
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+  fileInput.addEventListener("change", (e) => {
+    if (e.target.files[0]) setFile(e.target.files[0]);
+  });
+
+  function setFile(file) {
+    selectedFile = file;
+    fileChipSlot.innerHTML = `
+      <div class="file-chip">
+        <span class="name">📄 ${file.name} <span style="color:var(--text-faint)">(${(file.size / 1024).toFixed(1)} KB)</span></span>
+        <span class="remove" id="remove-file">✕</span>
+      </div>`;
+    document.getElementById("remove-file").addEventListener("click", (e) => {
+      e.stopPropagation();
+      resetFile();
+    });
+    uploadBtn.disabled = false;
+    clearBtn.style.display = "inline-flex";
+  }
+
+  function resetFile() {
+    selectedFile = null;
+    fileInput.value = "";
+    fileChipSlot.innerHTML = "";
+    uploadBtn.disabled = true;
+    clearBtn.style.display = "none";
+  }
+
+  clearBtn.addEventListener("click", resetFile);
+
+  function showBanner(type, icon, msg) {
+    bannerSlot.innerHTML = `<div class="banner ${type}"><span>${icon}</span><span>${msg}</span></div>`;
+  }
+
+  uploadBtn.addEventListener("click", async () => {
+    if (!selectedFile) return;
+    uploadBtn.disabled = true;
+    uploadBtnLabel.innerHTML = `<span class="spinner"></span> Uploading…`;
+    bannerSlot.innerHTML = "";
+    resultCard.style.display = "none";
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      const data = await apiPost("/performance/", formData, true);
+      showBanner("success", "✅", "Performance data uploaded and processed successfully.");
+      resultCard.style.display = "block";
+      resultJson.textContent = JSON.stringify(data, null, 2);
+    } catch (err) {
+      showBanner("error", "⚠️", err.message);
+    } finally {
+      uploadBtnLabel.innerHTML = "⬆️ Upload Performance Data";
+      uploadBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

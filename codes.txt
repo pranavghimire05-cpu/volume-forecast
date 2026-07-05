@@ -1,0 +1,6 @@
+html 
+cd C:\Users\prana\Desktop\Demo\bandwidth-managment-agents\frontend
+python -m http.server 5500
+
+api
+uvicorn app.main:app --reload

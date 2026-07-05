@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Performance Agent · Bandwidth AI</title>
+
+    <!-- Performance CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/performance.css">
+</head>
+
+<body>
+
+    <div class="app">
+        <div id="sidebar-mount"></div>
+
+        <main class="main" id="main-content"></main>
+    </div>
+
+    <!-- Chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+    <!-- Your JavaScript files -->
+    <script src="js/api.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/performance.js"></script>
+
+    <script>
+        mountSidebar("performance");
+    </script>
+
+</body>
+
+</html>

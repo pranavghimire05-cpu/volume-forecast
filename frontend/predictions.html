@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Predictions · Bandwidth AI</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-mount"></div>
+
+  <main class="main">
+    <div class="page-header">
+      <div>
+        <div class="page-title"><span class="emoji">🔮</span>Order Predictions</div>
+        <div class="page-sub">Generate order forecasts using the trained model. Times shown are America/New_York.</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="single">📈 Single Prediction</button>
+      <button class="tab-btn" data-tab="future">📅 Future Forecast</button>
+    </div>
+
+    <div id="banner-slot"></div>
+
+    <!-- ===================== SINGLE PREDICTION ===================== -->
+    <section id="tab-single">
+      <div class="card" style="margin-bottom:22px;">
+        <div class="field-label">Timestamp (America/New_York)</div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+          <div style="flex:1; min-width:240px;">
+            <input type="datetime-local" id="single-timestamp" />
+          </div>
+          <button class="btn" id="predict-btn">
+            <span id="predict-btn-label">🚀 Predict Orders</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="single-result-wrap" style="display:none;">
+        <div class="grid-2">
+          <div class="card">
+            <div class="section-title">Forecasted Orders</div>
+            <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap;">
+              <div>
+                <div class="stat-value" style="font-size:46px;" id="s-predicted">—</div>
+                <div class="stat-meta">
+                  📊 Expected Range: <strong style="color:var(--purple)" id="s-range">—</strong>
+                </div>
+              </div>
+              <svg id="s-curve" viewBox="0 0 420 120" style="flex:1; min-width:220px; height:120px;"></svg>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="kv-row"><span class="k">🕒 Prediction time</span><span class="v" id="s-time">—</span></div>
+            <div class="kv-row"><span class="k">🤖 Model</span><span class="v">XGBoost Regressor</span></div>
+            <div class="kv-row"><span class="k">🛡️ Confidence interval</span><span class="v">95%</span></div>
+            <div class="kv-row"><span class="k">Lower bound</span><span class="v" id="s-lower">—</span></div>
+            <div class="kv-row"><span class="k">Upper bound</span><span class="v" id="s-upper">—</span></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px;">
+          <div class="collapsible-head" id="raw-toggle">⌄ View Raw Response</div>
+          <div class="raw-json" id="s-raw"></div>
+        </div>
+      </div>
+
+      <div class="empty-state" id="single-empty">
+        <div class="e-icon">🔮</div>
+        Pick a timestamp and run a prediction to see results here.
+      </div>
+    </section>
+
+    <!-- ===================== FUTURE FORECAST ===================== -->
+    <section id="tab-future" style="display:none;">
+      <div class="card" style="margin-bottom:22px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+        <div style="color:var(--text-dim); font-size:13px;">
+          Predicts and stores orders for every future row currently scheduled.
+        </div>
+        <button class="btn" id="future-btn">
+          <span id="future-btn-label">📅 Generate Future Forecast</span>
+        </button>
+      </div>
+
+      <div id="future-content" style="display:none;">
+        <div class="card-row" id="future-stats"></div>
+
+        <div class="card" style="margin-bottom:22px;">
+          <div class="section-title">Forecast Overview</div>
+          <svg id="future-chart" viewBox="0 0 1000 320" style="width:100%; height:300px;"></svg>
+        </div>
+
+        <div class="section-title">Forecast Breakdown</div>
+        <div class="card-row" id="future-cards" style="grid-template-columns: repeat(auto-fill, minmax(160px,1fr));"></div>
+      </div>
+
+      <div class="empty-state" id="future-empty">
+        <div class="e-icon">📅</div>
+        Run a future forecast to see upcoming predicted order volume.
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+  mountSidebar("predictions");
+
+  // ---------- Tabs ----------
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("tab-single").style.display = btn.dataset.tab === "single" ? "block" : "none";
+      document.getElementById("tab-future").style.display = btn.dataset.tab === "future" ? "block" : "none";
+      bannerSlot.innerHTML = "";
+    });
+  });
+
+  const bannerSlot = document.getElementById("banner-slot");
+  function showBanner(type, icon, msg) {
+    bannerSlot.innerHTML = `<div class="banner ${type}"><span>${icon}</span><span>${msg}</span></div>`;
+  }
+
+  // ---------- Single prediction ----------
+  const singleTimestampInput = document.getElementById("single-timestamp");
+  singleTimestampInput.value = nowAsNYCDateTimeLocalValue();
+
+  const predictBtn = document.getElementById("predict-btn");
+  const predictBtnLabel = document.getElementById("predict-btn-label");
+
+  document.getElementById("raw-toggle").addEventListener("click", () => {
+    const el = document.getElementById("s-raw");
+    el.style.display = el.style.display === "none" ? "block" : "none";
+  });
+
+  function drawSingleCurve(predicted, lower, upper) {
+    const svg = document.getElementById("s-curve");
+    const mid = 60;
+    const range = Math.max(upper - lower, 1);
+    const norm = (v) => 100 - ((v - lower) / range) * 80 - 10;
+    const wavePts = [];
+    for (let i = 0; i <= 10; i++) {
+      const x = (i / 10) * mid;
+      const y = 60 + Math.sin(i * 1.3) * 14;
+      wavePts.push(`${x},${y}`);
+    }
+    const linePts = `${wavePts.join(" ")} ${mid},${norm(predicted)}`;
+    svg.innerHTML = `
+      <polyline points="${linePts}" fill="none" stroke="#6d5ef0" stroke-width="2.5" />
+      <line x1="${mid}" y1="10" x2="${mid}" y2="110" stroke="rgba(255,255,255,0.15)" stroke-dasharray="3,3" />
+      <circle cx="${mid}" cy="${norm(predicted)}" r="6" fill="#9b6df0" />
+      <line x1="${mid}" y1="${norm(predicted)}" x2="${mid+90}" y2="${norm(upper)}" stroke="rgba(255,255,255,0.3)" stroke-dasharray="3,3" />
+      <line x1="${mid}" y1="${norm(predicted)}" x2="${mid+90}" y2="${norm(lower)}" stroke="rgba(255,255,255,0.3)" stroke-dasharray="3,3" />
+      <text x="${mid+95}" y="${norm(upper)}" fill="#a78bfa" font-size="11" font-family="Inter">Upper ${upper}</text>
+      <text x="${mid+95}" y="${norm(lower)}" fill="#9098ad" font-size="11" font-family="Inter">Lower ${lower}</text>
+    `;
+  }
+
+  predictBtn.addEventListener("click", async () => {
+    if (!singleTimestampInput.value) {
+      showBanner("error", "⚠️", "Pick a timestamp first.");
+      return;
+    }
+    predictBtn.disabled = true;
+    predictBtnLabel.innerHTML = `<span class="spinner"></span> Predicting…`;
+    bannerSlot.innerHTML = "";
+
+    try {
+      const isoTimestamp = singleTimestampInput.value;
+      const data = await apiGet(`/predict/?timestamp=${encodeURIComponent(isoTimestamp)}`);
+
+      const predicted = data.predicted ?? data.prediction ?? 0;
+      const lower = data.lower_bound ?? data.lower ?? 0;
+      const upper = data.upper_bound ?? data.upper ?? 0;
+
+      document.getElementById("s-predicted").textContent = fmtNum(predicted);
+      document.getElementById("s-range").textContent = `${fmtNum(lower)} - ${fmtNum(upper)}`;
+      document.getElementById("s-lower").textContent = fmtNum(lower);
+      document.getElementById("s-upper").textContent = fmtNum(upper);
+      document.getElementById("s-time").textContent =data.timestamp;
+      document.getElementById("s-raw").textContent = JSON.stringify(data, null, 2);
+      document.getElementById("s-raw").style.display = "none";
+      drawSingleCurve(Number(predicted), Number(lower), Number(upper));
+
+      document.getElementById("single-empty").style.display = "none";
+      document.getElementById("single-result-wrap").style.display = "block";
+      showBanner("success", "✅", "Prediction completed successfully!");
+    } catch (err) {
+      showBanner("error", "⚠️", err.message);
+    } finally {
+      predictBtnLabel.innerHTML = "🚀 Predict Orders";
+      predictBtn.disabled = false;
+    }
+  });
+
+  // ---------- Future forecast ----------
+  const futureBtn = document.getElementById("future-btn");
+  const futureBtnLabel = document.getElementById("future-btn-label");
+
+  function normalizeFutureRows(data) {
+    const rows = Array.isArray(data) ? data : data.rows || data.predictions || data.results || [];
+    return rows.map((r) => ({
+      timestamp: r.timestamp || r.date || r.ds,
+      predicted: Number(r.predicted ?? r.prediction ?? r.yhat ?? 0),
+      lower: Number(r.lower_bound ?? r.lower ?? r.yhat_lower ?? 0),
+      upper: Number(r.upper_bound ?? r.upper ?? r.yhat_upper ?? 0),
+    })).filter((r) => r.timestamp);
+  }
+
+  function renderFutureStats(rows) {
+    const total = rows.reduce((s, r) => s + r.predicted, 0);
+    const avg = rows.length ? total / rows.length : 0;
+    const peak = rows.reduce((a, b) => (b.predicted > a.predicted ? b : a), rows[0] || { predicted: 0 });
+    const low = rows.reduce((a, b) => (b.predicted < a.predicted ? b : a), rows[0] || { predicted: 0 });
+
+    document.getElementById("future-stats").innerHTML = `
+      <div class="card stat-card">
+        <div class="stat-top">Total Predicted Orders<span class="stat-icon">📊</span></div>
+        <div class="stat-value">${fmtNum(Math.round(total))}</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-top">Average<span class="stat-icon">📅</span></div>
+        <div class="stat-value">${fmtNum(avg.toFixed(2))}</div>
+        <div class="stat-meta">Avg predicted per row</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-top">Peak<span class="stat-icon">📈</span></div>
+        <div class="stat-value">${fmtNum(Math.round(peak.predicted || 0))}</div>
+        <div class="stat-meta up">${peak.timestamp}</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-top">Low<span class="stat-icon">📉</span></div>
+        <div class="stat-value">${fmtNum(Math.round(low.predicted || 0))}</div>
+        <div class="stat-meta">${low.timestamp}</div>
+      </div>
+    `;
+  }
+
+  function renderFutureChart(rows) {
+  const svg = document.getElementById("future-chart");
+  if (!rows.length) {
+    svg.innerHTML = "";
+    return;
+  }
+
+  const W = 1000, H = 320, padL = 50, padR = 20, padT = 20, padB = 50;
+
+  const maxV = Math.max(...rows.map(r => r.upper), 1);
+  const minV = Math.min(...rows.map(r => r.lower), 0);
+
+  const x = (i) =>
+    padL + (i / Math.max(rows.length - 1, 1)) * (W - padL - padR);
+
+  const y = (v) =>
+    padT + (1 - (v - minV) / Math.max(maxV - minV, 1)) * (H - padT - padB);
+
+  const formatLabel = (ts) => {
+    const d = new Date(ts);
+    return d.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+
+  const line = (key) =>
+    rows.map((r, i) => `${x(i)},${y(r[key])}`).join(" ");
+
+  svg.innerHTML = `
+    <!-- confidence bands -->
+    <polyline points="${line("upper")}"
+      fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="5,4" />
+
+    <polyline points="${line("lower")}"
+      fill="none" stroke="#2dd4bf" stroke-width="1.5" stroke-dasharray="5,4" />
+
+    <!-- prediction -->
+    <polyline points="${line("predicted")}"
+      fill="none" stroke="#5b8def" stroke-width="2.5" />
+
+    <!-- points + hover -->
+    ${rows.map((r, i) => {
+      const cx = x(i);
+      const cy = y(r.predicted);
+      const label = formatLabel(r.timestamp);
+
+      return `
+        <circle cx="${cx}" cy="${cy}" r="4" fill="#5b8def">
+          <title>
+            ${label}
+            Predicted: ${Math.round(r.predicted)}
+            Range: ${Math.round(r.lower)} - ${Math.round(r.upper)}
+          </title>
+        </circle>
+      `;
+    }).join("")}
+
+    <!-- x-axis labels -->
+    ${rows.map((r, i) => {
+      if (i % Math.ceil(rows.length / 10 || 1) !== 0) return "";
+
+      return `
+        <text
+          x="${x(i)}"
+          y="${H - 15}"
+          fill="#5e6580"
+          font-size="10"
+          text-anchor="middle"
+        >
+          ${formatLabel(r.timestamp)}
+        </text>
+      `;
+    }).join("")}
+  `;
+}
+
+  function renderFutureCards(rows) {
+    document.getElementById("future-cards").innerHTML = rows.map((r) => `
+      <div class="card stat-card">
+        <div class="stat-top">${r.timestamp}<span class="stat-icon">📦</span></div>
+        <div class="stat-value" style="font-size:22px;">${fmtNum(Math.round(r.predicted))}</div>
+        <div class="stat-meta">Range ${fmtNum(Math.round(r.lower))} - ${fmtNum(Math.round(r.upper))}</div>
+      </div>
+    `).join("");
+  }
+
+  futureBtn.addEventListener("click", async () => {
+    futureBtn.disabled = true;
+    futureBtnLabel.innerHTML = `<span class="spinner"></span> Generating…`;
+    bannerSlot.innerHTML = "";
+
+    try {
+      const data = await apiGet("/predict/future");
+      const rows = normalizeFutureRows(data);
+
+      if (!rows.length) {
+        showBanner("info", "ℹ️", "No future rows were returned by the model.");
+        document.getElementById("future-content").style.display = "none";
+        document.getElementById("future-empty").style.display = "block";
+        return;
+      }
+
+      renderFutureStats(rows);
+      renderFutureChart(rows);
+      renderFutureCards(rows);
+
+      document.getElementById("future-empty").style.display = "none";
+      document.getElementById("future-content").style.display = "block";
+      showBanner("success", "✅", `Generated forecast for ${rows.length} upcoming row(s).`);
+    } catch (err) {
+      showBanner("error", "⚠️", err.message);
+    } finally {
+      futureBtnLabel.innerHTML = "📅 Generate Future Forecast";
+      futureBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

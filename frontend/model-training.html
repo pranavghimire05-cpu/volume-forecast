@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Model Training · Bandwidth AI</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-mount"></div>
+
+  <main class="main">
+    <div class="page-header">
+      <div>
+        <div class="page-title"><span class="emoji">✨</span>Model Training</div>
+        <div class="page-sub">Train the order forecasting model on all historical volume data.</div>
+      </div>
+    </div>
+
+    <div id="banner-slot"></div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+        <div>
+          <div class="section-title" style="margin-bottom:4px;">Train on historical data</div>
+          <div style="color:var(--text-dim); font-size:13px;">
+            Runs the full pipeline against every record currently stored and saves a new model artifact.
+          </div>
+        </div>
+        <button class="btn" id="train-btn">
+          <span id="train-btn-label">✨ Train Model</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="card-row" id="metrics-row" style="margin-top:22px; display:none;">
+      <div class="card stat-card">
+        <div class="stat-top">Status<span class="stat-icon">✅</span></div>
+        <div class="stat-value" style="font-size:18px;" id="m-message">—</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-top">Model<span class="stat-icon">🤖</span></div>
+        <div class="stat-value" style="font-size:18px;" id="m-model">XGBoost</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-top">Trained rows<span class="stat-icon">🧮</span></div>
+        <div class="stat-value" id="m-rows">—</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-top">Trained at<span class="stat-icon">🕒</span></div>
+        <div class="stat-value" style="font-size:16px;" id="m-time">—</div>
+        <div class="stat-meta">America/New_York</div>
+      </div>
+    </div>
+
+    <div class="card" id="result-card" style="margin-top:22px; display:none;">
+      <div class="section-title">Training metrics</div>
+      <div class="raw-json" id="result-json"></div>
+    </div>
+  </main>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+  mountSidebar("training");
+
+  const trainBtn = document.getElementById("train-btn");
+  const trainBtnLabel = document.getElementById("train-btn-label");
+  const bannerSlot = document.getElementById("banner-slot");
+  const resultCard = document.getElementById("result-card");
+  const resultJson = document.getElementById("result-json");
+  const metricsRow = document.getElementById("metrics-row");
+
+  function showBanner(type, icon, msg) {
+    bannerSlot.innerHTML = `<div class="banner ${type}"><span>${icon}</span><span>${msg}</span></div>`;
+  }
+
+  trainBtn.addEventListener("click", async () => {
+    trainBtn.disabled = true;
+    trainBtnLabel.innerHTML = `<span class="spinner"></span> Training…`;
+    bannerSlot.innerHTML = "";
+    resultCard.style.display = "none";
+    metricsRow.style.display = "none";
+
+    try {
+      const data = await apiPost("/train/", {});
+      showBanner("success", "✅", data.message || "Model trained successfully.");
+
+      document.getElementById("m-message").textContent = data.message || "Trained";
+      document.getElementById("m-rows").textContent = fmtNum(
+        data.rows ?? data.n_rows ?? data.training_rows ?? data.samples ?? null
+      );
+      document.getElementById("m-time").textContent = formatUTCAsNYC(new Date().toISOString());
+      metricsRow.style.display = "grid";
+
+      resultCard.style.display = "block";
+      resultJson.textContent = JSON.stringify(data, null, 2);
+    } catch (err) {
+      showBanner("error", "⚠️", err.message);
+    } finally {
+      trainBtnLabel.innerHTML = "✨ Train Model";
+      trainBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
